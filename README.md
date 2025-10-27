@@ -1,61 +1,64 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Laravel lento? Entenda suas queries
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Este repositorio acompanha o video **"Laravel e realmente lento?"** publicado por Lucas Souza (Virgo) no canal Brain Code.
+Assista: https://www.youtube.com/watch?v=eAi2lCahmpY
 
-## About Laravel
+## Ponto principal do video
+- Duas queries com o mesmo resultado podem consumir recursos de forma muito diferente.
+- Aplicar funcao em cima de coluna indexada (ex.: `DATE(created_at)`) remove a possibilidade de o otimizador usar o indice.
+- O impacto aparece quando existem dezenas ou centenas de usuarios concorrendo pelos mesmos dados.
+- Antes de culpar o framework, entenda como o banco atende suas queries e quais argumentos sao realmente sargable.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Queries comparadas na demo
+```php
+// Rota "bad": quebra o indice ao usar whereDate
+Order::query()
+    ->whereDate('created_at', $date)
+    ->orderByDesc('id')
+    ->paginate(50);
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+// Rota "good": preserva o indice com whereBetween
+Order::query()
+    ->whereBetween('created_at', [$start, $end])
+    ->orderByDesc('id')
+    ->paginate(50);
+```
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+A tabela `orders` possui mais de 100 mil linhas e um indice dedicado em `created_at`. Somente a segunda abordagem permite que o MySQL busque usando o indice `idx_created_at` definido em `database/migrations/2025_10_24_140111_create_orders_table.php`.
 
-## Learning Laravel
+## Ferramentas mostradas
+- `EXPLAIN`: evidencia se a consulta utiliza chave primaria ou indice secundario.
+- `mysqlslap`: exercita concorrencias de 1, 10, 40 e 100 usuarios simulando carga real.
+- Laravel Octane + FrankenPHP: servidor HTTP que suporta concorrencia alta durante os testes.
+- Pest + Stressless: testes automatizados para medir throughput das rotas `/orders/good` e `/orders/bad`.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Resultados destacados
+### mysqlslap
+- Query nao sargable (rota "bad"): 32 ms (1 usuario), 600 ms (10), ~4 s (40), ~9 s (100).
+- Query sargable (rota "good"): 20 ms (1 usuario), ~100 ms (10), ~0.8 s (40), ~2 s (100).
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+### Pest Stressless (`tests/Feature/OrdersStressTest.php`)
+- Concorrencia 40 durante 10 s: rota "good" respondeu ~1732 requisicoes com media de 256 ms.
+- Mesmo cenario na rota "bad": ~80 requisicoes com media de 9 s.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Como rodar localmente
+1. Clonar o repositorio e entrar na pasta do projeto.
+2. Copiar o arquivo de ambiente: `cp .env.example .env`.
+3. Ajustar as variaveis de banco no `.env`. O `compose.yaml` ja provisiona MySQL via Laravel Sail.
+4. Subir os containers: `./vendor/bin/sail up`.
+5. Instalar dependencias PHP e JS (caso ainda nao tenha feito): `composer install` e `npm install`.
+6. Executar migracoes e seeds (gera 10k usuarios e 500k pedidos, pode levar alguns minutos): `./vendor/bin/sail artisan migrate --seed`.
+7. Acessar `http://localhost/orders/good` e `http://localhost/orders/bad` para comparar o tempo de resposta.
 
-## Laravel Sponsors
+## Testes de estresse
+- Com o Octane ativo dentro do container Sail, rode `./vendor/bin/sail test --group=comparison` para repetir o comparativo exibido no video.
+- Use `./vendor/bin/sail test --group=heavy` para exercitar cenarios com 1000 usuarios simultaneos (demora e consome mais CPU).
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Aprendizados sugeridos
+- Pesquise sobre "SARGable arguments" e planeje indices de acordo com os filtros que sua aplicacao usa.
+- Monitore queries reais com `EXPLAIN`, `slow query log` ou ferramentas APM antes de trocar de framework.
+- Prefira ajustar seus modelos e filtros Eloquent para preservar colunas indexadas em vez de aplicar funcoes no banco.
 
-### Premium Partners
-
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Conteudo adicional
+Ficou curioso sobre banco de dados no Laravel? 
+Leia mais em nosso blog: https://blog.beerandcode.com.br/tutoriais/o-laravel-e-lento-entenda-por-que-sua-aplicacao-nao-escala/
