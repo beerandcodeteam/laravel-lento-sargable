@@ -1,6 +1,6 @@
 # Laravel lento? Entenda suas queries
 
-Este repositorio acompanha o video **"Laravel e realmente lento?"** publicado por Lucas Souza (Virgo) no canal Brain Code.
+Este repositorio acompanha o video **"Laravel e realmente lento?"** publicado por Lucas Souza (Virgo) no canal Beer and Code.
 Assista: https://www.youtube.com/watch?v=eAi2lCahmpY
 
 ## Ponto principal do video
